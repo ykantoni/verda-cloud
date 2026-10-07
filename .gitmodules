@@ -1,3 +1,6 @@
 [submodule "verda-vm-infra"]
 	path = verda-vm-infra
 	url = https://github.com/ykantoni/verda-vm-infra.git
+[submodule "verda-k8s-infra"]
+	path = verda-k8s-infra
+	url = https://github.com/ykantoni/verda-k8s-infra.git
