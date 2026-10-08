@@ -4,61 +4,68 @@
 #
 # tfstate_path honors TF_VAR_tfstate_location from the environment if it's
 # set, falling back to verda-vm-infra's own terraform.tfstate otherwise.
-# Every recipe below uses this one value, so vm-init's backend and the
-# k8s-* recipes' remote-state lookup always agree — but if you've exported
-# TF_VAR_tfstate_location, that's what wins. Check `echo $TF_VAR_tfstate_location`
-# before running vm-init/apply if you're not intentionally relocating state.
+# vm-init's backend and verda-k8s-infra's remote-state lookup (used only
+# for argocd_admin_password_command) both use this one value — but if
+# you've exported TF_VAR_tfstate_location, that's what wins. Check
+# `echo $TF_VAR_tfstate_location` before running vm-init/apply if you're
+# not intentionally relocating state.
+#
+# kubeconfig_path is the same idea for the kubeconfig verda-vm-infra
+# generates while bootstrapping RKE2: verda-k8s-infra's helm provider
+# (which installs Argo CD) reads it from there.
 
 vm_dir := "verda-vm-infra"
 k8s_dir := "verda-k8s-infra"
 tfstate_path := env_var_or_default("TF_VAR_tfstate_location", justfile_directory() / vm_dir / "terraform.tfstate")
+kubeconfig_path := env_var_or_default("TF_VAR_kubeconfig_path", justfile_directory() / vm_dir / ".terraform-kubeconfig.yaml")
 
 # Initialize both repos.
 init: vm-init k8s-init
 
-# Apply both repos in order: create/update the VMs, then bootstrap RKE2 onto them.
+# Apply both repos in order: create/update the VMs and bootstrap RKE2+Cilium onto them, then install Argo CD.
 apply: vm-apply k8s-apply
 
-# Destroy both repos in reverse order: tear down the RKE2 bootstrap bookkeeping, then the VMs.
+# Destroy both repos in reverse order: uninstall Argo CD, then tear down the VMs (which also removes RKE2).
 destroy: k8s-destroy vm-destroy
 
 # Initialize verda-vm-infra (safe to re-run any time; always targets the same path).
 vm-init:
     cd {{ vm_dir }} && terraform init -reconfigure -backend-config="path={{ tfstate_path }}"
 
-# Create/update the VMs.
+# Create/update the VMs, and bootstrap RKE2+Cilium onto them.
 vm-apply: vm-init
     cd {{ vm_dir }} && terraform apply -auto-approve
 
-# Destroy the VMs. Run k8s-destroy first if verda-k8s-infra has been applied.
+# Destroy the VMs (and, with them, RKE2). Run k8s-destroy first if verda-k8s-infra has been applied.
 vm-destroy: vm-init
     cd {{ vm_dir }} && terraform destroy -auto-approve
+
+# Write ~/verda_kubeconfig.yaml for the running cluster.
+generate: vm-init
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd {{ vm_dir }}
+    eval "$(terraform output -raw kubeconfig_command)"
+    echo "Wrote ~/verda_kubeconfig.yaml"
 
 # Initialize verda-k8s-infra (run once per checkout).
 k8s-init:
     cd {{ k8s_dir }} && terraform init
 
-# Bootstrap/update RKE2 on the VMs over SSH (requires vm-apply to have run first).
+# Install/update Argo CD (requires vm-apply to have run first).
 k8s-apply: k8s-init
     #!/usr/bin/env bash
     set -euo pipefail
     export TF_VAR_tfstate_location="{{ tfstate_path }}"
+    export TF_VAR_kubeconfig_path="{{ kubeconfig_path }}"
     cd {{ k8s_dir }}
     terraform apply -auto-approve
 
-# Remove RKE2 bootstrap bookkeeping from state (does not uninstall RKE2 itself — see README).
+# Uninstall Argo CD.
 k8s-destroy: k8s-init
     #!/usr/bin/env bash
     set -euo pipefail
     export TF_VAR_tfstate_location="{{ tfstate_path }}"
+    export TF_VAR_kubeconfig_path="{{ kubeconfig_path }}"
     cd {{ k8s_dir }}
     terraform destroy -auto-approve
-
-# Write ~/verda_kubeconfig.yaml for the running cluster.
-generate: k8s-init
-    #!/usr/bin/env bash
-    set -euo pipefail
-    export TF_VAR_tfstate_location="{{ tfstate_path }}"
-    cd {{ k8s_dir }}
-    eval "$(terraform output -raw kubeconfig_command)"
-    echo "Wrote ~/verda_kubeconfig.yaml"
