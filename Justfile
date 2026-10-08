@@ -55,7 +55,7 @@ k8s-destroy: k8s-init
     terraform destroy -auto-approve
 
 # Write ~/verda_kubeconfig.yaml for the running cluster.
-k8s-config: k8s-init
+generate: k8s-init
     #!/usr/bin/env bash
     set -euo pipefail
     export TF_VAR_tfstate_location="{{ tfstate_path }}"
