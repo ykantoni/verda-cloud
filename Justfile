@@ -27,11 +27,11 @@ vm-init:
     cd {{ vm_dir }} && terraform init -reconfigure -backend-config="path={{ tfstate_path }}"
 
 # Create/update the VMs.
-vm-apply:
+vm-apply: vm-init
     cd {{ vm_dir }} && terraform apply -auto-approve
 
 # Destroy the VMs. Run k8s-destroy first if verda-k8s-infra has been applied.
-vm-destroy:
+vm-destroy: vm-init
     cd {{ vm_dir }} && terraform destroy -auto-approve
 
 # Initialize verda-k8s-infra (run once per checkout).
@@ -39,7 +39,7 @@ k8s-init:
     cd {{ k8s_dir }} && terraform init
 
 # Bootstrap/update RKE2 on the VMs over SSH (requires vm-apply to have run first).
-k8s-apply:
+k8s-apply: k8s-init
     #!/usr/bin/env bash
     set -euo pipefail
     export TF_VAR_tfstate_location="{{ tfstate_path }}"
@@ -47,15 +47,15 @@ k8s-apply:
     terraform apply -auto-approve
 
 # Remove RKE2 bootstrap bookkeeping from state (does not uninstall RKE2 itself — see README).
-k8s-destroy:
+k8s-destroy: k8s-init
     #!/usr/bin/env bash
     set -euo pipefail
     export TF_VAR_tfstate_location="{{ tfstate_path }}"
     cd {{ k8s_dir }}
     terraform destroy -auto-approve
 
-# Write ~/kubeconfig.yaml for the running cluster.
-k8s-config:
+# Write ~/verda_kubeconfig.yaml for the running cluster.
+k8s-config: k8s-init
     #!/usr/bin/env bash
     set -euo pipefail
     export TF_VAR_tfstate_location="{{ tfstate_path }}"
