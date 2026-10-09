@@ -45,7 +45,18 @@ generate: vm-init
     #!/usr/bin/env bash
     set -euo pipefail
     cd {{ vm_dir }}
-    eval "$(terraform output -raw kubeconfig_command)"
+    # `terraform output -raw` on an output that can't resolve (e.g. no
+    # cp1_ip because nothing is actually applied) prints nothing and still
+    # exits 0 — no error to catch. Left unchecked, `eval "$(...)"` would
+    # then no-op and this recipe would print "Wrote ..." while silently
+    # leaving a stale ~/verda_kubeconfig.yaml (pointing at a possibly
+    # since-destroyed cluster) in place. Check for emptiness explicitly.
+    CMD="$(terraform output -raw kubeconfig_command)"
+    if [ -z "$CMD" ]; then
+        echo "Error: kubeconfig_command is empty — is verda-vm-infra actually applied? Run 'just vm-apply' first." >&2
+        exit 1
+    fi
+    eval "$CMD"
     echo "Wrote ~/verda_kubeconfig.yaml"
 
 # Initialize verda-k8s-infra (run once per checkout).
@@ -69,3 +80,7 @@ k8s-destroy: k8s-init
     export TF_VAR_kubeconfig_path="{{ kubeconfig_path }}"
     cd {{ k8s_dir }}
     terraform destroy -auto-approve
+
+# Unseal OpenBao using keys from ~/.openbao-unseal-keys (lab convenience — see verda-k8s-infra's README).
+unseal-openbao:
+    {{ k8s_dir }}/scripts/unseal-openbao.sh
