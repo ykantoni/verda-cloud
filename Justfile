@@ -82,5 +82,5 @@ k8s-destroy: k8s-init
     terraform destroy -auto-approve
 
 # Unseal OpenBao using keys from ~/.openbao-unseal-keys (lab convenience — see verda-k8s-infra's README).
-unseal-openbao:
+unseal:
     {{ k8s_dir }}/scripts/unseal-openbao.sh
