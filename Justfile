@@ -84,3 +84,17 @@ k8s-destroy: k8s-init
 # Unseal OpenBao using keys from ~/.openbao-unseal-keys (lab convenience — see verda-k8s-infra's README).
 unseal:
     {{ k8s_dir }}/scripts/unseal-openbao.sh
+
+# Print NodePort endpoints for Argo CD, Grafana, Prometheus, OpenBao and the Longhorn UI.
+endpoints:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export TF_VAR_tfstate_location="{{ tfstate_path }}"
+    IP="$(cd {{ vm_dir }} && terraform output -raw cp1_ip)"
+    echo "Using cp1's IP ($IP) — any node's IP works, NodePorts bind on every node."
+    echo
+    printf '%-12s %s\n' "Argo CD"     "https://$IP:30443  (admin / terraform output -raw argocd_admin_password_command, in verda-k8s-infra)"
+    printf '%-12s %s\n' "Grafana"     "http://$IP:30091   (admin / see verda-k8s-infra README for the password-fetch command)"
+    printf '%-12s %s\n' "Prometheus"  "http://$IP:30090"
+    printf '%-12s %s\n' "OpenBao"     "http://$IP:30092   (root token in ~/.openbao-unseal-keys — just unseal)"
+    printf '%-12s %s\n' "Longhorn UI" "http://$IP:30093"
