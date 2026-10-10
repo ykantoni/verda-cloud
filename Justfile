@@ -100,7 +100,7 @@ generate: vm-init
 k8s-init:
     cd {{ k8s_dir }} && terraform init
 
-# Install/update Argo CD (requires vm-apply to have run first).
+# Install/update Argo CD, then unseal OpenBao and wire it up as ESO's backend (both automatic; a missing HF token just skips that one step — see configure-vllm-secret).
 k8s-apply: k8s-init
     #!/usr/bin/env bash
     set -euo pipefail
@@ -108,6 +108,9 @@ k8s-apply: k8s-init
     export TF_VAR_kubeconfig_path="{{ kubeconfig_path }}"
     cd {{ k8s_dir }}
     terraform apply -auto-approve
+    cd {{ justfile_directory() }}
+    {{ k8s_dir }}/scripts/unseal-openbao.sh
+    {{ k8s_dir }}/scripts/configure-vllm-secret.sh
 
 # Uninstall Argo CD.
 k8s-destroy: k8s-init
@@ -121,6 +124,10 @@ k8s-destroy: k8s-init
 # Unseal OpenBao using keys from ~/.openbao-unseal-keys (lab convenience — see verda-k8s-infra's README).
 unseal:
     {{ k8s_dir }}/scripts/unseal-openbao.sh
+
+# Wire OpenBao up as External Secrets Operator's backend for the vLLM Hugging Face token. Already runs automatically on 'just k8s-apply' — this is for reruns, e.g. 'HF_TOKEN=hf_xxx just configure-vllm-secret' once you have a token.
+configure-vllm-secret:
+    {{ k8s_dir }}/scripts/configure-vllm-secret.sh
 
 # Print NodePort and Gateway API endpoints for Argo CD, Grafana, Prometheus, OpenBao, Longhorn UI and Hubble UI.
 endpoints:
