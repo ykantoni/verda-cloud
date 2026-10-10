@@ -40,7 +40,7 @@ vm-apply: vm-init
 vm-destroy: vm-init
     cd {{ vm_dir }} && terraform destroy -auto-approve
 
-# Write ~/verda_kubeconfig.yaml and ~/verda_gateway_hosts for the running cluster.
+# Write ~/verda_kubeconfig.yaml and ~/verda_gateway_hosts for the running cluster, and print credentials + the /etc/hosts line.
 generate: vm-init
     #!/usr/bin/env bash
     set -euo pipefail
@@ -64,9 +64,37 @@ generate: vm-init
         echo "Error: worker1_ip is empty — is verda-vm-infra actually applied? Run 'just vm-apply' first." >&2
         exit 1
     fi
-    echo "$WORKER_IP longhorn.lab openbao.lab grafana.lab prometheus.lab" > ~/verda_gateway_hosts
-    echo "Wrote ~/verda_gateway_hosts — append it to /etc/hosts to resolve the Gateway API hostnames:"
-    echo "  sudo tee -a /etc/hosts < ~/verda_gateway_hosts"
+    HOSTS_LINE="$WORKER_IP longhorn.lab openbao.lab grafana.lab prometheus.lab"
+    echo "$HOSTS_LINE" > ~/verda_gateway_hosts
+    echo "Wrote ~/verda_gateway_hosts. Add this to /etc/hosts to resolve the Gateway API hostnames:"
+    echo "  $HOSTS_LINE"
+    echo "  (sudo tee -a /etc/hosts < ~/verda_gateway_hosts)"
+    echo
+
+    # Best-effort credential lookup: each of these depends on something
+    # that may not exist yet (verda-k8s-infra applied, kube-prometheus-stack
+    # synced, OpenBao ever unsealed) — none of that should abort the rest
+    # of this recipe, so every lookup below is allowed to fail quietly and
+    # fall back to a placeholder instead.
+    echo "Credentials:"
+    ARGOCD_PASS=""
+    ARGOCD_CMD="$(cd "{{ justfile_directory() / k8s_dir }}" && TF_VAR_tfstate_location="{{ tfstate_path }}" terraform output -raw argocd_admin_password_command 2>/dev/null || true)"
+    if [ -n "$ARGOCD_CMD" ]; then
+        ARGOCD_PASS="$(eval "$ARGOCD_CMD" 2>/dev/null || true)"
+    fi
+    printf '%-10s %s\n' "Argo CD" "admin / ${ARGOCD_PASS:-<not available — is verda-k8s-infra applied?>}"
+
+    GRAFANA_PASS=""
+    if command -v kubectl >/dev/null 2>&1; then
+        GRAFANA_PASS="$(kubectl --kubeconfig ~/verda_kubeconfig.yaml -n monitoring get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || true)"
+    fi
+    printf '%-10s %s\n' "Grafana" "admin / ${GRAFANA_PASS:-<not available — is kube-prometheus-stack synced?>}"
+
+    OPENBAO_TOKEN=""
+    if [ -f ~/.openbao-unseal-keys ]; then
+        OPENBAO_TOKEN="$(sed -n 's/^# Root token: //p' ~/.openbao-unseal-keys | head -1)"
+    fi
+    printf '%-10s %s\n' "OpenBao" "root token: ${OPENBAO_TOKEN:-<not available — run 'just unseal' first>}"
 
 # Initialize verda-k8s-infra (run once per checkout).
 k8s-init:
@@ -94,7 +122,7 @@ k8s-destroy: k8s-init
 unseal:
     {{ k8s_dir }}/scripts/unseal-openbao.sh
 
-# Print NodePort and Gateway API endpoints for Argo CD, Grafana, Prometheus, OpenBao and the Longhorn UI.
+# Print NodePort and Gateway API endpoints for Argo CD, Grafana, Prometheus, OpenBao, Longhorn UI and Hubble UI.
 endpoints:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -107,6 +135,7 @@ endpoints:
     printf '%-12s %s\n' "Prometheus"  "http://$IP:30090"
     printf '%-12s %s\n' "OpenBao"     "http://$IP:30092   (root token in ~/.openbao-unseal-keys — just unseal)"
     printf '%-12s %s\n' "Longhorn UI" "http://$IP:30093"
+    printf '%-12s %s\n' "Hubble UI"   "http://$IP:30094   (Cilium's live network flow/service map)"
     echo
     echo "Same four apps, also reachable one port at a time via Gateway API"
     echo "(Verda intercepts 80/443 on every node's public IP at its own edge,"
