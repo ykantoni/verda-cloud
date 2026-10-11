@@ -4,3 +4,6 @@
 [submodule "verda-k8s-infra"]
 	path = verda-k8s-infra
 	url = https://github.com/ykantoni/verda-k8s-infra.git
+[submodule "verda-k8s-apps"]
+	path = verda-k8s-apps
+	url = git@github.com:ykantoni/verda-k8s-apps.git
