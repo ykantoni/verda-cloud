@@ -7,3 +7,6 @@
 [submodule "verda-k8s-apps"]
 	path = verda-k8s-apps
 	url = git@github.com:ykantoni/verda-k8s-apps.git
+[submodule "verda-search-agent"]
+	path = verda-search-agent
+	url = git@github.com:ykantoni/verda-search-agent.git
